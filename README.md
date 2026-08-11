@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <code></code> · <code>󰆍</code> · <code>󰖯</code> · <code></code> · <code>󰙯</code>
+  <code></code>
 </p>
 
 ---
