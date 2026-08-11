@@ -1,0 +1,13 @@
+{
+  "": {
+    "dependencies": "/Users/rayan/.config/sketchybar/helpers/dark-mode-notify/.build/arm64-apple-macosx/release/dark_mode_notify.build/dark_mode_notify.d",
+    "object": "/Users/rayan/.config/sketchybar/helpers/dark-mode-notify/.build/arm64-apple-macosx/release/dark_mode_notify.build/dark_mode_notify.o",
+    "swift-dependencies": "/Users/rayan/.config/sketchybar/helpers/dark-mode-notify/.build/arm64-apple-macosx/release/dark_mode_notify.build/primary.swiftdeps"
+  },
+  "/Users/rayan/.config/sketchybar/helpers/dark-mode-notify/main.swift": {
+    "object": "/Users/rayan/.config/sketchybar/helpers/dark-mode-notify/.build/arm64-apple-macosx/release/dark_mode_notify.build/main.swift.o",
+    "swiftmodule": "/Users/rayan/.config/sketchybar/helpers/dark-mode-notify/.build/arm64-apple-macosx/release/dark_mode_notify.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/rayan/.config/sketchybar/helpers/dark-mode-notify/.build/arm64-apple-macosx/release/dark_mode_notify.build/main.swiftdeps",
+    "diagnostics": "/Users/rayan/.config/sketchybar/helpers/dark-mode-notify/.build/arm64-apple-macosx/release/dark_mode_notify.build/main.dia"
+  }
+}

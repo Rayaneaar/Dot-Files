@@ -1,0 +1,9 @@
+options=(
+    style=round
+    width=1.5
+    hidpi=on
+    order=above
+    active_color=0xffb4befe
+    inactive_color=0xff45475a
+)
+borders "${options[@]}"
