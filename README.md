@@ -370,9 +370,9 @@ It's about creating an environment that makes you **want to open the terminal an
 
 <p align="center">
 
-### ✦ XENOZ
+### ✦ XENOZ aka @Rayaneaar
 
-**Made with  +  + **
+**Made with  +
 
 `⌘` `⌥` `⇧` `⌃`
 
