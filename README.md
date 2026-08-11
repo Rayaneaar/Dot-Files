@@ -1,6 +1,6 @@
 # ✦ XENOZ
 <p align="center">
-  <img src="./assets/XE.png" width="900" alt="XENOZ">
+  <img src="./assets/Xe.png" width="900" alt="XENOZ">
 </p>
 <p align="center">
   <strong>A minimal, keyboard-driven macOS rice.</strong>
