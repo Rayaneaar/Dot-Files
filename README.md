@@ -1,3 +1,190 @@
+# ✦ XENOZ CLI
+
+<p align="center">
+  <strong>One command. One theme. Entire environment.</strong>
+</p>
+
+## ◇ XENOZ CLI in Action
+
+<p align="center">
+  <video src="./assets/X3-cli.mov" width="850" controls>
+    Your browser does not support the video tag.
+  </video>
+</p>
+
+> 🎥 **XENOZ CLI demo** — switch between complete desktop themes without manually editing every application.
+
+---
+
+## ✦ How It Works
+
+```text
+                         ┌─────────────────┐
+                         │    XENOZ CLI    │
+                         └────────┬────────┘
+                                  │
+                         Select a theme
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │  Theme Engine   │
+                         └────────┬────────┘
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+              ▼                   ▼                   ▼
+           Kitty               Neovim            SketchyBar
+              │                   │                   │
+              └───────────────────┼───────────────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │  XENOZ Desktop  │
+                         └─────────────────┘
+```
+
+The CLI acts as the **orchestrator** of the XENOZ environment.
+
+Instead of manually changing:
+
+```text
+Kitty
+Neovim
+SketchyBar
+Oh My Posh
+Borders
+```
+
+XENOZ applies the theme across the entire environment.
+
+---
+
+## ✦ Theme Switching
+
+For example:
+
+```bash
+xenoz theme crimson
+```
+
+One command can transform the visual identity of the environment:
+
+```text
+             Current Theme
+                   │
+                   │
+                   ▼
+          xenoz theme crimson
+                   │
+                   ▼
+            Crimson Theme
+                   │
+       ┌───────────┼───────────┐
+       ▼           ▼           ▼
+     Kitty       Neovim    SketchyBar
+       │           │           │
+       └───────────┼───────────┘
+                   ▼
+             XENOZ Desktop
+```
+
+---
+
+## ✦ CLI Screenshots
+
+### Terminal Interface
+
+<p align="center">
+  <img src="./assets/x3-1.png" alt="XENOZ CLI Interface" width="850">
+</p>
+
+> The main XENOZ CLI interface.
+
+---
+
+### Theme Selection
+
+<p align="center">
+  <img src="./assets/x3-2.png" alt="XENOZ Theme Selector" width="850">
+</p>
+
+> Browse and select the available XENOZ themes.
+
+---
+
+| Theme                   | Style                       |
+| ----------------------- | --------------------------- |
+| **Crimson Urban Night** | Dark · Burgundy · Cinematic |
+| **Theme 02**            | —                           |
+| **Theme 03**            | —                           |
+
+---
+
+## ✦ CLI Workflow
+
+```bash
+# Show available themes
+xenoz themes
+
+# Apply a theme
+xenoz theme crimson
+
+# Show the current theme
+xenoz current
+
+# Display help
+xenoz help
+```
+
+> Replace these examples with the exact commands supported by your XENOZ CLI.
+
+---
+
+## ✦ The Idea
+
+The XENOZ CLI exists to make **ricing reproducible**.
+
+Without XENOZ:
+
+```text
+Edit Kitty
+    ↓
+Edit Neovim
+    ↓
+Edit SketchyBar
+    ↓
+Edit Oh My Posh
+    ↓
+Reload everything
+    ↓
+Repeat for every theme
+```
+
+With XENOZ:
+
+```text
+              xenoz theme crimson
+                       │
+                       ▼
+               ┌───────────────┐
+               │  XENOZ Theme  │
+               └───────┬───────┘
+                       │
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+      Kitty          Neovim       SketchyBar
+        │              │              │
+        └──────────────┼──────────────┘
+                       ▼
+                Complete Theme
+```
+
+<p align="center">
+  <strong>One command.</strong><br>
+  <sub>One visual system. Zero repetitive configuration.</sub>
+</p>
+
+---
 # ✦ XENOZ
 <p align="center">
   <img src="./assets/Xe.png" width="900" alt="XENOZ">
@@ -377,4 +564,5 @@ It's about creating an environment that makes you **want to open the terminal an
 `⌘` `⌥` `⇧` `⌃`
 
 </p>
+
 

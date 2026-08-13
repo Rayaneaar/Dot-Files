@@ -6,3 +6,15 @@ debug
 foo.*
 *.log
 data
+# macOS
+.DS_Store
+
+# Swift build artifacts
+.build/
+
+# Xcode
+DerivedData/
+
+# Editor
+.vscode/
+.idea/

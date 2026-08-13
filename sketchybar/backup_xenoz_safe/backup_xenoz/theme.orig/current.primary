@@ -1,0 +1,1 @@
+0xff grep -oE #[0-9A-Fa-f]{6} head -8

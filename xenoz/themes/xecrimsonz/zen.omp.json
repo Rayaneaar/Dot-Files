@@ -1,0 +1,57 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json",
+  "palette": {
+    "background": "#09090b",
+    "surface": "#141215",
+    "foreground": "#ede6ec",
+    "muted": "#665764",
+    "accent": "#ff3b5c",
+    "accent_secondary": "#ff758f",
+    "border": "#3d1c28",
+    "selection": "#2d1620"
+  },
+  "blocks": [
+    {
+      "alignment": "left",
+      "segments": [
+        {
+          "background": "p:surface",
+          "foreground": "p:accent",
+          "leading_diamond": "\ue0b6",
+          "style": "diamond",
+          "template": " {{ .Path }} ",
+          "type": "path"
+        },
+        {
+          "background": "p:surface",
+          "foreground": "p:foreground",
+          "style": "diamond",
+          "template": " {{ if .UpstreamIcon }}{{ .UpstreamIcon }}{{ end }}{{ .HEAD }}{{ if .Working.Changed }}*{{ end }} ",
+          "trailing_diamond": "\ue0b4",
+          "type": "git"
+        }
+      ],
+      "type": "prompt"
+    },
+    {
+      "alignment": "left",
+      "newline": true,
+      "segments": [
+        {
+          "foreground": "p:accent",
+          "style": "plain",
+          "template": "$ ",
+          "type": "text"
+        }
+      ],
+      "type": "prompt"
+    }
+  ],
+  "transient_prompt": {
+    "background": "transparent",
+    "foreground": "p:accent",
+    "template": "$ "
+  },
+  "final_space": true,
+  "version": 2
+}

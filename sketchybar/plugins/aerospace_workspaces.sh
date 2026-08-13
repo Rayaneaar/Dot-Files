@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
+set -u
 
-if [ "$1" = "$FOCUSED_WORKSPACE" ]; then
-    sketchybar --set "$NAME" \
-        background.drawing=on \
-        icon.highlight=on
-else
-    sketchybar --set "$NAME" \
-        background.drawing=off \
-        icon.highlight=off
-fi
+# Safe workspace handler - updates UI state, never switches aerospace workspace from event handler
+exec lua "$CONFIG_DIR/lua/workspace.lua"

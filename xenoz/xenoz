@@ -1,0 +1,906 @@
+#!/usr/bin/env node
+
+/**
+ * ✦ XENOZ Theme Engine & CLI ✦
+ * Cyber-aesthetic theme switcher for macOS, Kitty, Neovim, Oh My Posh & SketchyBar
+ */
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { exec } = require('child_process');
+const readline = require('readline');
+
+// --- Paths & Configuration ---
+const XENOZ_DIR = process.env.XENOZ_DIR || path.join(os.homedir(), '.config', 'xenoz');
+const THEMES_DIR = path.join(XENOZ_DIR, 'themes');
+const CURRENT_LINK = path.join(XENOZ_DIR, 'current');
+const KITTY_CONF = path.join(os.homedir(), '.config', 'kitty', 'kitty.conf');
+const POSH_CONF = path.join(os.homedir(), '.config', 'oh-my-posh', 'zen.omp.json');
+const SKETCHYBAR_SCRIPT = path.join(os.homedir(), '.config', 'sketchybar', 'theme', 'wallpaper_theme.sh');
+
+// --- ANSI & Styling Helpers ---
+const ESC = '\x1b[';
+const RESET = `${ESC}0m`;
+const BOLD = `${ESC}1m`;
+const DIM = `${ESC}2m`;
+const ITALIC = `${ESC}3m`;
+const UNDERLINE = `${ESC}4m`;
+const HIDE_CURSOR = `${ESC}?25l`;
+const SHOW_CURSOR = `${ESC}?25h`;
+const CLEAR_SCREEN = `${ESC}2J${ESC}H`;
+const CLEAR_LINE = `${ESC}2K\r`;
+
+function hexToRgb(hex) {
+  if (!hex) return [200, 200, 200];
+  let h = String(hex).replace('#', '').trim();
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const num = parseInt(h, 16);
+  if (isNaN(num)) return [200, 200, 200];
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(x => Math.max(0, Math.min(255, Math.round(x))).toString(16).padStart(2, '0')).join('');
+}
+
+function fgHex(hex, text) {
+  const [r, g, b] = hexToRgb(hex);
+  return `${ESC}38;2;${r};${g};${b}m${text}${RESET}`;
+}
+
+function bgHex(hex, text) {
+  const [r, g, b] = hexToRgb(hex);
+  return `${ESC}48;2;${r};${g};${b}m${text}${RESET}`;
+}
+
+function getLuminance(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function getContrastColor(hex) {
+  return getLuminance(hex) > 135 ? '#101014' : '#f8f8fc';
+}
+
+function interpolateColor(hex1, hex2, factor) {
+  const [r1, g1, b1] = hexToRgb(hex1);
+  const [r2, g2, b2] = hexToRgb(hex2);
+  const r = r1 + factor * (r2 - r1);
+  const g = g1 + factor * (g2 - g1);
+  const b = b1 + factor * (b2 - b1);
+  return rgbToHex(r, g, b);
+}
+
+function gradientText(text, hexStart, hexEnd) {
+  const chars = Array.from(text);
+  if (chars.length <= 1) return fgHex(hexStart, text);
+  return chars.map((char, i) => {
+    const factor = i / (chars.length - 1);
+    const color = interpolateColor(hexStart, hexEnd, factor);
+    return fgHex(color, char);
+  }).join('');
+}
+
+// --- Theme Metadata & Descriptions ---
+const THEME_PRESETS = {
+  xeamethystz: {
+    title: 'Neon Amethyst',
+    desc: 'Cyberpunk Synthwave • Radiant Violet & Cyan Accents',
+    gradient: ['#c77dff', '#00f5d4']
+  },
+  xecrimsonz: {
+    title: 'Crimson Noir',
+    desc: 'Deep Velvet Obsidian • High-Contrast Rose & Crimson',
+    gradient: ['#ff3b5c', '#ff85a1']
+  },
+  xedarkz: {
+    title: 'Monochrome Void',
+    desc: 'Pitch Black Minimalist • Carbon Titanium & Ice Blue',
+    gradient: ['#f4f4f5', '#93c5fd']
+  },
+  xelightz: {
+    title: 'Soft Porcelain',
+    desc: 'Japanese Studio Minimalist • Calming Sumi Ink & Indigo',
+    gradient: ['#3b5998', '#b91c1c']
+  },
+  xeoceanz: {
+    title: 'Abyssal Ocean',
+    desc: 'Deep Marine Abyss • Glowing Azure & Aqua Shimmer',
+    gradient: ['#38bdf8', '#22d3ee']
+  },
+  xeswampz: {
+    title: 'Moss Emerald',
+    desc: 'Pine Forest Obsidian • Glowing Jade & Mint Grove',
+    gradient: ['#34d399', '#86efac']
+  },
+  xewarmz: {
+    title: 'Warm Amber',
+    desc: 'Sunset Dusk & Hearth • Autumn Ember & Honey Gold',
+    gradient: ['#f97316', '#fbbf24']
+  }
+};
+
+// --- Core Theme Loader ---
+function loadThemes() {
+  if (!fs.existsSync(THEMES_DIR)) {
+    return [];
+  }
+
+  const dirs = fs.readdirSync(THEMES_DIR).filter(f => {
+    const p = path.join(THEMES_DIR, f);
+    return fs.statSync(p).isDirectory();
+  }).sort();
+
+  let activeTheme = null;
+  if (fs.existsSync(CURRENT_LINK)) {
+    try {
+      const target = fs.readlinkSync(CURRENT_LINK);
+      activeTheme = path.basename(target);
+    } catch (_) {}
+  }
+
+  return dirs.map((id, index) => {
+    const themeDir = path.join(THEMES_DIR, id);
+    const colors = {
+      name: id,
+      background: '#141414',
+      surface: '#242424',
+      foreground: '#e0e0e0',
+      muted: '#666666',
+      accent: '#bb86fc',
+      accent_secondary: '#03dac6',
+      border: '#333333',
+      selection: '#2c2c34'
+    };
+
+    // Parse colors.lua
+    const luaPath = path.join(themeDir, 'colors.lua');
+    if (fs.existsSync(luaPath)) {
+      const content = fs.readFileSync(luaPath, 'utf8');
+      const matches = content.matchAll(/([a-zA-Z0-9_]+)\s*=\s*["'](#?[a-zA-Z0-9]+)["']/g);
+      for (const m of matches) {
+        colors[m[1]] = m[2].startsWith('#') ? m[2] : `#${m[2]}`;
+      }
+    }
+
+    // Parse theme.conf for fallback / kitty specific
+    const confPath = path.join(themeDir, 'theme.conf');
+    if (fs.existsSync(confPath)) {
+      const confLines = fs.readFileSync(confPath, 'utf8').split('\n');
+      for (const line of confLines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const [key, val] = trimmed.split(/\s+/);
+        if (key === 'background' && val) colors.background = val;
+        if (key === 'foreground' && val) colors.foreground = val;
+        if (key === 'cursor' && val && !colors.accent) colors.accent = val;
+        if (key === 'active_border_color' && val && !colors.border) colors.border = val;
+      }
+    }
+
+    // Find wallpaper
+    let wallpaper = null;
+    const candidates = [
+      `${id}.png`, `${id}.jpg`, `${id}.jpeg`, `${id}.webp`,
+      'wallpaper.png', 'wallpaper.jpg', 'wallpaper.jpeg', 'wallpaper.webp'
+    ];
+    for (const c of candidates) {
+      const wp = path.join(themeDir, c);
+      if (fs.existsSync(wp)) {
+        wallpaper = wp;
+        break;
+      }
+    }
+    if (!wallpaper) {
+      try {
+        const anyImg = fs.readdirSync(themeDir).find(f => /\.(png|jpg|jpeg|webp)$/i.test(f));
+        if (anyImg) wallpaper = path.join(themeDir, anyImg);
+      } catch (_) {}
+    }
+
+    const preset = THEME_PRESETS[id] || {
+      title: id.replace(/^xe/, '').replace(/z$/, '').toUpperCase() || id,
+      desc: 'Custom XENOZ Theme',
+      gradient: [colors.accent || '#a855f7', colors.accent_secondary || '#3b82f6']
+    };
+
+    return {
+      id,
+      index: index + 1,
+      path: themeDir,
+      colors,
+      wallpaper,
+      title: preset.title,
+      desc: preset.desc,
+      gradient: preset.gradient,
+      isActive: id === activeTheme
+    };
+  });
+}
+
+function resolveTheme(input, themes) {
+  if (!input) return null;
+  const clean = input.trim().toLowerCase();
+
+  // Exact ID match
+  let found = themes.find(t => t.id.toLowerCase() === clean);
+  if (found) return found;
+
+  // Number index match (1-based)
+  const num = parseInt(clean, 10);
+  if (!isNaN(num) && num >= 1 && num <= themes.length) {
+    return themes[num - 1];
+  }
+
+  // Alias match without 'xe' or 'z' (e.g. 'ocean' -> 'xeoceanz', 'dark' -> 'xedarkz')
+  found = themes.find(t => {
+    const stripped = t.id.replace(/^xe/, '').replace(/z$/, '').toLowerCase();
+    return stripped === clean;
+  });
+  if (found) return found;
+
+  // Substring / prefix match
+  found = themes.find(t => t.id.toLowerCase().includes(clean) || t.title.toLowerCase().includes(clean));
+  return found || null;
+}
+
+// --- Dynamic Switch Execution ---
+async function applyTheme(themeObj, options = {}) {
+  const startTime = Date.now();
+  const theme = themeObj.id;
+  const targetDir = themeObj.path;
+  const isSilent = options.silent || false;
+  const isTTY = process.stdout.isTTY && !isSilent;
+
+  const steps = [
+    { name: 'Core Symlinks', status: 'pending', desc: 'Symlinking ~/.config/xenoz/current' },
+    { name: 'Kitty Terminal', status: 'pending', desc: 'Broadcasting SIGUSR1 reload' },
+    { name: 'Neovim RPC', status: 'pending', desc: 'Updating active Neovim server sockets' },
+    { name: 'Oh My Posh', status: 'pending', desc: 'Linking prompt theme config' },
+    { name: 'macOS Wallpaper', status: 'pending', desc: 'Updating desktop picture via System Events' },
+    { name: 'SketchyBar & Borders', status: 'pending', desc: 'Synchronizing dynamic status bar' }
+  ];
+
+  // 1. Core Symlink
+  const doSymlink = async () => {
+    const tmpLink = CURRENT_LINK + '.tmp.' + Date.now();
+    try {
+      if (fs.existsSync(tmpLink)) fs.unlinkSync(tmpLink);
+      fs.symlinkSync(`themes/${theme}`, tmpLink);
+      fs.renameSync(tmpLink, CURRENT_LINK);
+      return { ok: true, msg: 'Theme linked' };
+    } catch (e) {
+      try {
+        if (fs.existsSync(CURRENT_LINK) || fs.lstatSync(CURRENT_LINK).isSymbolicLink()) {
+          fs.unlinkSync(CURRENT_LINK);
+        }
+        fs.symlinkSync(`themes/${theme}`, CURRENT_LINK);
+        return { ok: true, msg: 'Theme linked' };
+      } catch (err2) {
+        return { ok: false, msg: err2.message };
+      }
+    }
+  };
+
+  // 2. Kitty Reload
+  const doKitty = async () => {
+    return new Promise((resolve) => {
+      if (fs.existsSync(KITTY_CONF)) {
+        try {
+          const now = new Date();
+          fs.utimesSync(KITTY_CONF, now, now);
+        } catch (_) {}
+      }
+      exec('pkill -USR1 -f kitty', (err) => {
+        resolve({ ok: true, msg: err ? 'Updated (will apply on launch)' : 'Reloaded via SIGUSR1' });
+      });
+    });
+  };
+
+  // 3. Neovim RPC Sockets
+  const doNvim = async () => {
+    return new Promise((resolve) => {
+      const tmpDirs = [process.env.TMPDIR, '/tmp', '/var/tmp'].filter(Boolean);
+      let sockets = [];
+      for (const t of tmpDirs) {
+        try {
+          const files = fs.readdirSync(t);
+          for (const f of files) {
+            if (f.startsWith('nvim')) {
+              const full = path.join(t, f);
+              try {
+                if (fs.statSync(full).isSocket()) sockets.push(full);
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (sockets.length === 0) {
+        return resolve({ ok: true, msg: 'No active instances (ready on start)' });
+      }
+
+      let count = 0;
+      let completed = 0;
+      for (const sock of sockets) {
+        count++;
+        exec(`nvim --server "${sock}" --remote-send "<Cmd>lua require('xenoz').apply()<CR>"`, () => {
+          completed++;
+          if (completed === count) {
+            resolve({ ok: true, msg: `Updated ${count} running socket${count > 1 ? 's' : ''}` });
+          }
+        });
+      }
+    });
+  };
+
+  // 4. Oh My Posh
+  const doPosh = async () => {
+    return new Promise((resolve) => {
+      const poshDir = path.dirname(POSH_CONF);
+      if (!fs.existsSync(poshDir)) {
+        return resolve({ ok: true, msg: 'Directory not found (skipped)' });
+      }
+      const targetPosh = path.join(CURRENT_LINK, 'zen.omp.json');
+      try {
+        if (fs.existsSync(POSH_CONF) || fs.lstatSync(POSH_CONF).isSymbolicLink()) {
+          fs.unlinkSync(POSH_CONF);
+        }
+        fs.symlinkSync(targetPosh, POSH_CONF);
+        const now = new Date();
+        fs.utimesSync(POSH_CONF, now, now);
+        resolve({ ok: true, msg: 'Prompt theme updated' });
+      } catch (e) {
+        resolve({ ok: false, msg: e.message });
+      }
+    });
+  };
+
+  // 5. Wallpaper Switch
+  const doWallpaper = async () => {
+    return new Promise((resolve) => {
+      if (!themeObj.wallpaper || !fs.existsSync(themeObj.wallpaper)) {
+        return resolve({ ok: true, msg: 'No wallpaper file (skipped)' });
+      }
+      const wpAbs = path.resolve(themeObj.wallpaper);
+      const script = `osascript -e 'tell application "System Events" to tell every desktop to set picture to "${wpAbs}"'`;
+      exec(script, (err) => {
+        if (err) {
+          exec(`osascript -e 'tell application "System Events" to set picture of current desktop to "${wpAbs}"'`, (err2) => {
+            resolve({ ok: !err2, msg: err2 ? 'Wallpaper set failed' : path.basename(wpAbs) });
+          });
+        } else {
+          resolve({ ok: true, msg: path.basename(wpAbs) });
+        }
+      });
+    });
+  };
+
+  // 6. SketchyBar & Borders
+  const doSketchybar = async () => {
+    return new Promise((resolve) => {
+      exec('pgrep -x sketchybar', (err, stdout) => {
+        if (err || !stdout.trim()) {
+          return resolve({ ok: true, msg: 'Not currently running' });
+        }
+        if (fs.existsSync(SKETCHYBAR_SCRIPT)) {
+          const cacheWp = path.join(path.dirname(SKETCHYBAR_SCRIPT), 'current.wallpaper');
+          try { fs.unlinkSync(cacheWp); } catch (_) {}
+          exec(`bash "${SKETCHYBAR_SCRIPT}"`, (err2) => {
+            resolve({ ok: !err2, msg: 'Bar & borders refreshed' });
+          });
+        } else {
+          resolve({ ok: true, msg: 'Script not found' });
+        }
+      });
+    });
+  };
+
+  // Spinner logic
+  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let frameIdx = 0;
+  let animInterval = null;
+
+  const getLines = (final = false) => {
+    const lines = [];
+    const accent = themeObj.colors.accent || '#a855f7';
+    const sec = themeObj.colors.accent_secondary || '#38bdf8';
+
+    lines.push('');
+    lines.push(`  ${BOLD}${gradientText('✦ SWITCHING THEME ✦', accent, sec)}${RESET}  ${DIM}→${RESET}  ${BOLD}${fgHex(accent, themeObj.title)}${RESET} ${DIM}(${themeObj.id})${RESET}`);
+    lines.push('');
+
+    for (const step of steps) {
+      let icon = '';
+      let statusText = '';
+      if (step.status === 'done') {
+        icon = fgHex('#22c55e', '✔');
+        statusText = fgHex('#a1a1aa', step.resultMsg || step.desc);
+      } else if (step.status === 'failed') {
+        icon = fgHex('#ef4444', '✖');
+        statusText = fgHex('#ef4444', step.resultMsg || 'Failed');
+      } else {
+        const frame = spinnerFrames[frameIdx % spinnerFrames.length];
+        icon = fgHex(accent, frame);
+        statusText = fgHex('#71717a', step.desc);
+      }
+      lines.push(`   ${icon}  ${BOLD}${step.name.padEnd(22)}${RESET} ${statusText}`);
+    }
+
+    if (final) {
+      const elapsed = Date.now() - startTime;
+      lines.push('');
+      lines.push(`  ╭──────────────────────────────────────────────────────────────╮`);
+      lines.push(`  │  ${fgHex('#22c55e', '●')}  ${BOLD}Theme synchronized in ${elapsed}ms${RESET}${' '.repeat(Math.max(1, 35 - String(elapsed).length))}│`);
+      lines.push(`  │  Palette:  ${renderPaletteBar(themeObj.colors)}                 │`);
+      lines.push(`  ╰──────────────────────────────────────────────────────────────╯`);
+      lines.push('');
+    }
+
+    return lines;
+  };
+
+  const totalLines = steps.length + 4;
+
+  if (isTTY) {
+    process.stdout.write(HIDE_CURSOR);
+    process.stdout.write('\n'.repeat(totalLines));
+    animInterval = setInterval(() => {
+      frameIdx++;
+      process.stdout.write(`${ESC}${totalLines}A`);
+      process.stdout.write(getLines(false).join('\n') + '\n');
+    }, 60);
+  }
+
+  // Execute all tasks in parallel
+  const tasks = [
+    doSymlink().then(r => { steps[0].status = r.ok ? 'done' : 'failed'; steps[0].resultMsg = r.msg; }),
+    doKitty().then(r => { steps[1].status = r.ok ? 'done' : 'failed'; steps[1].resultMsg = r.msg; }),
+    doNvim().then(r => { steps[2].status = r.ok ? 'done' : 'failed'; steps[2].resultMsg = r.msg; }),
+    doPosh().then(r => { steps[3].status = r.ok ? 'done' : 'failed'; steps[3].resultMsg = r.msg; }),
+    doWallpaper().then(r => { steps[4].status = r.ok ? 'done' : 'failed'; steps[4].resultMsg = r.msg; }),
+    doSketchybar().then(r => { steps[5].status = r.ok ? 'done' : 'failed'; steps[5].resultMsg = r.msg; })
+  ];
+
+  await Promise.allSettled(tasks);
+
+  if (animInterval) clearInterval(animInterval);
+
+  if (isTTY) {
+    process.stdout.write(`${ESC}${totalLines}A`);
+    process.stdout.write(getLines(true).join('\n') + '\n');
+    process.stdout.write(SHOW_CURSOR);
+  } else if (!isSilent) {
+    // Single clean output for non-TTY
+    console.log(getLines(true).join('\n'));
+  }
+
+  return { ok: true, duration: Date.now() - startTime };
+}
+
+// --- Visual Formatting & Components ---
+function renderPaletteBar(colors) {
+  const swatches = [
+    colors.background,
+    colors.surface,
+    colors.accent,
+    colors.accent_secondary,
+    colors.foreground
+  ].filter(Boolean);
+
+  return swatches.map(hex => `${fgHex(hex, '████')}`).join(' ');
+}
+
+function renderColorPills(colors) {
+  const items = [
+    { label: 'BG', hex: colors.background },
+    { label: 'SFC', hex: colors.surface },
+    { label: 'ACC', hex: colors.accent },
+    { label: 'SEC', hex: colors.accent_secondary },
+    { label: 'FG', hex: colors.foreground }
+  ].filter(it => it.hex);
+
+  return items.map(it => {
+    const textCol = getContrastColor(it.hex);
+    return `${bgHex(it.hex, fgHex(textCol, ` ${it.label} `))}`;
+  }).join(' ');
+}
+
+function getHeaderBanner(themeObj) {
+  const g1 = themeObj ? themeObj.gradient[0] : '#c084fc';
+  const g2 = themeObj ? themeObj.gradient[1] : '#38bdf8';
+
+  const ascii = [
+    `  ██╗  ██╗███████╗███╗   ██╗ ██████╗ ███████╗`,
+    `  ╚██╗██╔╝██╔════╝████╗  ██║██╔═══██╗╚══███╔╝`,
+    `   ╚███╔╝ █████╗  ██╔██╗ ██║██║   ██║  ███╔╝ `,
+    `   ██╔██╗ ██╔══╝  ██║╚██╗██║██║   ██║ ███╔╝  `,
+    `  ██╔╝ ██╗███████╗██║ ╚████║╚██████╔╝███████╗`,
+    `  ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝`
+  ];
+
+  const renderedLogo = ascii.map((line, idx) => {
+    const factor = idx / (ascii.length - 1);
+    const col = interpolateColor(g1, g2, factor);
+    return `${BOLD}${fgHex(col, line)}${RESET}`;
+  }).join('\n');
+
+  const subtitle = `     ${DIM}✦  C Y B E R - A E S T H E T I C   T H E M E   E N G I N E  ✦${RESET}`;
+  return `\n${renderedLogo}\n${subtitle}\n`;
+}
+
+// --- Commands ---
+
+// 1. List Command
+function commandList(themes) {
+  const active = themes.find(t => t.isActive);
+  console.log(getHeaderBanner(active));
+  console.log(`  ${BOLD}${UNDERLINE}AVAILABLE THEMES (${themes.length})${RESET}\n`);
+
+  for (const t of themes) {
+    const isAct = t.isActive;
+    const badge = isAct ? `${bgHex('#22c55e', fgHex('#000000', ' ACTIVE '))} ` : '        ';
+    const num = `${DIM}[${t.index}]${RESET}`;
+    const nameStr = `${BOLD}${fgHex(t.colors.accent || '#ffffff', t.id.padEnd(14))}${RESET}`;
+    const titleStr = `${fgHex('#a1a1aa', t.title.padEnd(18))}`;
+    const pills = renderColorPills(t.colors);
+    const swatches = renderPaletteBar(t.colors);
+
+    console.log(`  ${badge} ${num} ${nameStr} ${titleStr} ${swatches}  ${pills}`);
+    console.log(`           ${DIM}↳ ${t.desc}${RESET}`);
+    console.log('');
+  }
+
+  console.log(`  ${DIM}Quick Switch:${RESET} ${BOLD}xenoz <theme_name>${RESET}  ${DIM}or${RESET}  ${BOLD}xenoz <number>${RESET}\n`);
+}
+
+// 2. Current Command
+function commandCurrent(themes) {
+  const current = themes.find(t => t.isActive);
+  if (!current) {
+    console.log(`\n  ${fgHex('#ef4444', '✖')} No active XENOZ theme detected.\n`);
+    return;
+  }
+
+  console.log(getHeaderBanner(current));
+  console.log(`  ╭──────────────────────────────────────────────────────────────╮`);
+  console.log(`  │  ${BOLD}CURRENT ACTIVE THEME${RESET}${' '.repeat(41)}│`);
+  console.log(`  │  ${BOLD}${fgHex(current.colors.accent, current.title.padEnd(24))}${RESET} ${DIM}(${current.id})${RESET}${' '.repeat(Math.max(1, 32 - current.id.length))}│`);
+  console.log(`  │  ${DIM}${current.desc.padEnd(58)}${RESET}│`);
+  console.log(`  │                                                              │`);
+  console.log(`  │  ${BOLD}Palette Swatches:${RESET}                                           │`);
+  console.log(`  │  ${renderPaletteBar(current.colors)}   ${renderColorPills(current.colors)}      │`);
+  console.log(`  │                                                              │`);
+  console.log(`  │  ${BOLD}Color Breakdown:${RESET}                                            │`);
+  console.log(`  │  • Background : ${fgHex(current.colors.background, current.colors.background.padEnd(10))} • Accent    : ${fgHex(current.colors.accent, current.colors.accent.padEnd(10))}       │`);
+  console.log(`  │  • Surface    : ${fgHex(current.colors.surface, current.colors.surface.padEnd(10))} • Secondary : ${fgHex(current.colors.accent_secondary, current.colors.accent_secondary.padEnd(10))}       │`);
+  console.log(`  │  • Foreground : ${fgHex(current.colors.foreground, current.colors.foreground.padEnd(10))} • Border    : ${fgHex(current.colors.border || current.colors.accent, (current.colors.border || current.colors.accent).padEnd(10))}       │`);
+  console.log(`  │                                                              │`);
+  const wpName = current.wallpaper ? path.basename(current.wallpaper) : 'None';
+  console.log(`  │  • Wallpaper  : ${fgHex('#38bdf8', wpName.padEnd(44))}│`);
+  console.log(`  ╰──────────────────────────────────────────────────────────────╯\n`);
+}
+
+// 3. Preview Command
+function commandPreview(themeName, themes) {
+  const theme = resolveTheme(themeName, themes);
+  if (!theme) {
+    console.log(`\n  ${fgHex('#ef4444', '✖')} Theme '${themeName}' not found.\n`);
+    return;
+  }
+
+  console.log(`\n  ${BOLD}${gradientText('✦ THEME PREVIEW ✦', theme.gradient[0], theme.gradient[1])}${RESET}`);
+  console.log(`  ╭──────────────────────────────────────────────────────────────╮`);
+  console.log(`  │  ${BOLD}${fgHex(theme.colors.accent, theme.title.padEnd(25))}${RESET} ${DIM}(${theme.id})${RESET} ${theme.isActive ? bgHex('#22c55e', fgHex('#000', ' ACTIVE ')) : ''}${' '.repeat(Math.max(1, 22 - theme.id.length))}│`);
+  console.log(`  │  ${DIM}${theme.desc.padEnd(58)}${RESET}│`);
+  console.log(`  │                                                              │`);
+  console.log(`  │  ${BOLD}Color Ribbon:${RESET}                                              │`);
+  console.log(`  │  ${renderPaletteBar(theme.colors)}   ${renderColorPills(theme.colors)}      │`);
+  console.log(`  │                                                              │`);
+  console.log(`  │  ${BOLD}Hex Tokens:${RESET}                                                │`);
+  console.log(`  │   Background: ${fgHex(theme.colors.background, theme.colors.background)}   Surface: ${fgHex(theme.colors.surface, theme.colors.surface)}   Foreground: ${fgHex(theme.colors.foreground, theme.colors.foreground)}   │`);
+  console.log(`  │   Accent    : ${fgHex(theme.colors.accent, theme.colors.accent)}   Sec Accent: ${fgHex(theme.colors.accent_secondary, theme.colors.accent_secondary)}   Border: ${fgHex(theme.colors.border || theme.colors.accent, theme.colors.border || theme.colors.accent)}       │`);
+  console.log(`  ╰──────────────────────────────────────────────────────────────╯`);
+  console.log(`  ${DIM}Apply this theme:${RESET} ${BOLD}xenoz switch ${theme.id}${RESET}\n`);
+}
+
+// 4. Random Command
+async function commandRandom(themes) {
+  const current = themes.find(t => t.isActive);
+  const candidates = themes.filter(t => !t.isActive);
+  const pool = candidates.length > 0 ? candidates : themes;
+
+  if (process.stdout.isTTY) {
+    process.stdout.write(HIDE_CURSOR);
+    const frames = 12;
+    for (let i = 0; i < frames; i++) {
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const spinIcon = ['◓', '◑', '◒', '◐'][i % 4];
+      process.stdout.write(`${CLEAR_LINE}  ${fgHex(pick.colors.accent, spinIcon)} ${BOLD}Rolling themes...${RESET} ${fgHex(pick.colors.accent, pick.title)}`);
+      await new Promise(r => setTimeout(r, 35 + i * 10));
+    }
+    process.stdout.write(`${CLEAR_LINE}`);
+    process.stdout.write(SHOW_CURSOR);
+  }
+
+  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  console.log(`\n  ${BOLD}🎲 Selected:${RESET} ${fgHex(chosen.colors.accent, chosen.title)} ${DIM}(${chosen.id})${RESET}`);
+  await applyTheme(chosen);
+}
+
+// 5. Next / Previous Command
+async function commandCycle(direction, themes) {
+  const currentIdx = themes.findIndex(t => t.isActive);
+  let nextIdx = 0;
+  if (currentIdx !== -1) {
+    nextIdx = direction === 'next'
+      ? (currentIdx + 1) % themes.length
+      : (currentIdx - 1 + themes.length) % themes.length;
+  }
+  const chosen = themes[nextIdx];
+  await applyTheme(chosen);
+}
+
+// 6. Help Command
+function commandHelp() {
+  console.log(getHeaderBanner(null));
+  console.log(`  ${BOLD}${UNDERLINE}USAGE${RESET}`);
+  console.log(`    ${BOLD}xenoz${RESET}                     Open interactive theme browser & selector`);
+  console.log(`    ${BOLD}xenoz <theme>${RESET}             Instantly switch to theme (by name, alias, or #)`);
+  console.log(`    ${BOLD}xenoz switch <theme>${RESET}      Switch to theme with live animation`);
+  console.log(`    ${BOLD}xenoz list${RESET}, ${BOLD}ls${RESET}, ${BOLD}-l${RESET}          List all themes with color pills`);
+  console.log(`    ${BOLD}xenoz current${RESET}, ${BOLD}status${RESET}, ${BOLD}-c${RESET}   Show current active theme details`);
+  console.log(`    ${BOLD}xenoz random${RESET}, ${BOLD}rand${RESET}, ${BOLD}-r${RESET}     Select and apply a random theme`);
+  console.log(`    ${BOLD}xenoz next${RESET}, ${BOLD}-n${RESET} / ${BOLD}prev${RESET}, ${BOLD}-p${RESET}   Cycle to next or previous theme`);
+  console.log(`    ${BOLD}xenoz preview <theme>${RESET}     Preview theme palette without applying`);
+  console.log(`    ${BOLD}xenoz reload${RESET}              Re-apply current theme across all apps`);
+  console.log(`    ${BOLD}xenoz --help${RESET}, ${BOLD}-h${RESET}          Show this help manual`);
+  console.log('');
+  console.log(`  ${BOLD}${UNDERLINE}THEME ALIASES${RESET}`);
+  console.log(`    ${DIM}•${RESET} amethyst   → xeamethystz    ${DIM}•${RESET} ocean    → xeoceanz`);
+  console.log(`    ${DIM}•${RESET} crimson    → xecrimsonz     ${DIM}•${RESET} swamp    → xeswampz`);
+  console.log(`    ${DIM}•${RESET} dark       → xedarkz        ${DIM}•${RESET} warm     → xewarmz`);
+  console.log(`    ${DIM}•${RESET} light      → xelightz`);
+  console.log('');
+  console.log(`  ${BOLD}${UNDERLINE}EXAMPLES${RESET}`);
+  console.log(`    ${fgHex('#38bdf8', 'xenoz')}                      ${DIM}# Launch interactive UI${RESET}`);
+  console.log(`    ${fgHex('#38bdf8', 'xenoz ocean')}                ${DIM}# Fast switch to xeoceanz${RESET}`);
+  console.log(`    ${fgHex('#38bdf8', 'xenoz 1')}                    ${DIM}# Switch to theme #1${RESET}`);
+  console.log(`    ${fgHex('#38bdf8', 'xenoz random')}               ${DIM}# Surprise roll${RESET}\n`);
+}
+
+// --- Interactive TUI Theme Selector ---
+async function runInteractive(themes) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    commandList(themes);
+    return;
+  }
+
+  let selectedIndex = themes.findIndex(t => t.isActive);
+  if (selectedIndex === -1) selectedIndex = 0;
+
+  readline.emitKeypressEvents(process.stdin);
+  process.stdin.setRawMode(true);
+  process.stdout.write(HIDE_CURSOR);
+
+  const cleanup = () => {
+    process.stdout.write(SHOW_CURSOR);
+    if (process.stdin.isTTY) {
+      try { process.stdin.setRawMode(false); } catch (_) {}
+    }
+    process.stdin.pause();
+  };
+
+  const renderUI = () => {
+    const lines = [];
+    const selTheme = themes[selectedIndex];
+
+    lines.push(getHeaderBanner(selTheme));
+    lines.push(`  ${BOLD}✦ INTERACTIVE THEME SELECTOR ✦${RESET}  ${DIM}(Use ↑/↓ or j/k to navigate, Enter to apply)${RESET}\n`);
+
+    // Render list
+    for (let i = 0; i < themes.length; i++) {
+      const t = themes[i];
+      const isSelected = i === selectedIndex;
+      const isAct = t.isActive;
+
+      let prefix = '    ';
+      let tag = '';
+      if (isSelected) {
+        prefix = `  ${BOLD}${fgHex(t.colors.accent, '❯❯')}${RESET} `;
+      }
+
+      if (isAct) {
+        tag = ` ${bgHex('#22c55e', fgHex('#000000', ' ACTIVE '))}`;
+      }
+
+      const numStr = `${DIM}${t.index}.${RESET}`;
+      const titleStr = isSelected
+        ? `${BOLD}${UNDERLINE}${fgHex(t.colors.accent, t.title.padEnd(16))}${RESET}`
+        : `${BOLD}${fgHex('#d4d4d8', t.title.padEnd(16))}${RESET}`;
+      const idStr = `${DIM}(${t.id})${RESET}`.padEnd(16);
+      const swatches = renderPaletteBar(t.colors);
+
+      lines.push(`${prefix}${numStr} ${titleStr} ${idStr} ${swatches}${tag}`);
+    }
+
+    // Dynamic Preview Box
+    lines.push('');
+    const borderCol = selTheme.colors.accent || '#a855f7';
+    lines.push(`  ${fgHex(borderCol, '╭─ Preview: ' + selTheme.title + ' ' + '─'.repeat(Math.max(2, 45 - selTheme.title.length)) + '╮')}`);
+    lines.push(`  ${fgHex(borderCol, '│')}  ${DIM}Vibe:${RESET}      ${fgHex('#e4e4e7', selTheme.desc.padEnd(46))} ${fgHex(borderCol, '│')}`);
+    lines.push(`  ${fgHex(borderCol, '│')}  ${DIM}Palette:${RESET}   ${renderColorPills(selTheme.colors)}        ${fgHex(borderCol, '│')}`);
+    const wpFile = selTheme.wallpaper ? path.basename(selTheme.wallpaper) : 'None';
+    lines.push(`  ${fgHex(borderCol, '│')}  ${DIM}Wallpaper:${RESET} ${fgHex('#38bdf8', wpFile.padEnd(46))} ${fgHex(borderCol, '│')}`);
+    lines.push(`  ${fgHex(borderCol, '╰─────────────────────────────────────────────────────────────╯')}`);
+
+    // Controls footer
+    lines.push(`  ${DIM}[↑/↓/j/k] Navigate   [Enter/Space] Apply   [r] Random   [1-${themes.length}] Pick   [q/Esc] Quit${RESET}\n`);
+
+    process.stdout.write(CLEAR_SCREEN);
+    process.stdout.write(lines.join('\n'));
+  };
+
+  renderUI();
+
+  return new Promise((resolve) => {
+    const onKeypress = async (str, key) => {
+      if (!key) return;
+
+      // Exit keys
+      if (key.name === 'q' || key.name === 'escape' || (key.ctrl && key.name === 'c')) {
+        cleanup();
+        process.stdout.write(CLEAR_SCREEN);
+        console.log(`\n  ${DIM}Theme selection cancelled.${RESET}\n`);
+        process.stdin.removeListener('keypress', onKeypress);
+        return resolve();
+      }
+
+      // Navigation: Up / k / p
+      if (key.name === 'up' || key.name === 'k' || key.name === 'p') {
+        selectedIndex = (selectedIndex - 1 + themes.length) % themes.length;
+        renderUI();
+        return;
+      }
+
+      // Navigation: Down / j / n
+      if (key.name === 'down' || key.name === 'j' || key.name === 'n') {
+        selectedIndex = (selectedIndex + 1) % themes.length;
+        renderUI();
+        return;
+      }
+
+      // Random: r
+      if (key.name === 'r') {
+        cleanup();
+        process.stdout.write(CLEAR_SCREEN);
+        process.stdin.removeListener('keypress', onKeypress);
+        await commandRandom(themes);
+        return resolve();
+      }
+
+      // Number keys 1-9
+      const num = parseInt(str, 10);
+      if (!isNaN(num) && num >= 1 && num <= themes.length) {
+        selectedIndex = num - 1;
+        renderUI();
+        return;
+      }
+
+      // Selection: Enter or Space
+      if (key.name === 'return' || key.name === 'space') {
+        cleanup();
+        process.stdout.write(CLEAR_SCREEN);
+        process.stdin.removeListener('keypress', onKeypress);
+        const chosen = themes[selectedIndex];
+        await applyTheme(chosen);
+        return resolve();
+      }
+    };
+
+    process.stdin.on('keypress', onKeypress);
+  });
+}
+
+// --- Main Entrypoint ---
+async function main() {
+  const args = process.argv.slice(2);
+  const themes = loadThemes();
+
+  if (themes.length === 0) {
+    console.log(`\n  ${fgHex('#ef4444', '✖')} No themes found in: ${THEMES_DIR}\n`);
+    process.exit(1);
+  }
+
+  const firstArg = args[0] ? args[0].toLowerCase() : '';
+
+  if (!firstArg) {
+    await runInteractive(themes);
+    return;
+  }
+
+  if (firstArg === '-h' || firstArg === '--help' || firstArg === 'help') {
+    commandHelp();
+    return;
+  }
+
+  if (firstArg === '-v' || firstArg === '--version' || firstArg === 'version') {
+    console.log(`\n  ✦ ${BOLD}XENOZ Theme Engine${RESET} ${DIM}v2.0.0${RESET} (Ultra-Fast Edition)\n`);
+    return;
+  }
+
+  if (firstArg === 'list' || firstArg === 'ls' || firstArg === '-l') {
+    commandList(themes);
+    return;
+  }
+
+  if (firstArg === 'current' || firstArg === 'status' || firstArg === 'info' || firstArg === '-c') {
+    commandCurrent(themes);
+    return;
+  }
+
+  if (firstArg === 'random' || firstArg === 'rand' || firstArg === '-r') {
+    await commandRandom(themes);
+    return;
+  }
+
+  if (firstArg === 'next' || firstArg === '-n') {
+    await commandCycle('next', themes);
+    return;
+  }
+
+  if (firstArg === 'prev' || firstArg === 'previous' || firstArg === '-p') {
+    await commandCycle('prev', themes);
+    return;
+  }
+
+  if (firstArg === 'preview') {
+    const target = args[1];
+    if (!target) {
+      console.log(`\n  ${fgHex('#ef4444', '✖')} Please specify a theme to preview. (e.g. xenoz preview ocean)\n`);
+      process.exit(1);
+    }
+    commandPreview(target, themes);
+    return;
+  }
+
+  if (firstArg === 'reload') {
+    const current = themes.find(t => t.isActive) || themes[0];
+    console.log(`\n  ${BOLD}✦ Reloading current theme:${RESET} ${fgHex(current.colors.accent, current.title)}`);
+    await applyTheme(current);
+    return;
+  }
+
+  if (firstArg === 'switch' || firstArg === 'set' || firstArg === 'use') {
+    const target = args[1];
+    if (!target) {
+      await runInteractive(themes);
+      return;
+    }
+    const themeObj = resolveTheme(target, themes);
+    if (!themeObj) {
+      console.log(`\n  ${fgHex('#ef4444', '✖')} Theme '${target}' not found.`);
+      console.log(`  ${DIM}Run 'xenoz list' to see all available themes.${RESET}\n`);
+      process.exit(1);
+    }
+    await applyTheme(themeObj);
+    return;
+  }
+
+  // Direct theme switch fallback (e.g. `xenoz ocean`, `xenoz xeamethystz`, `xenoz 3`)
+  const themeObj = resolveTheme(firstArg, themes);
+  if (themeObj) {
+    await applyTheme(themeObj);
+    return;
+  }
+
+  console.log(`\n  ${fgHex('#ef4444', '✖')} Unknown theme or command: '${firstArg}'`);
+  console.log(`  ${DIM}Try 'xenoz --help' or 'xenoz list'${RESET}\n`);
+  process.exit(1);
+}
+
+main().catch(err => {
+  console.error('\n  Unexpected error:', err.message);
+  process.exit(1);
+});
