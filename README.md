@@ -7,7 +7,7 @@
 ## ◇ XENOZ CLI in Action
 
 <p align="center">
-  <video src="./xenoz/themes/xecrimsonz/xecrimsonz.png" width="850" controls>
+  <img src="./xenoz/themes/xecrimsonz/xecrimsonz.png" width="850" >
     Your browser does not support the video tag.
   </video>
 </p>
