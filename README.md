@@ -7,7 +7,7 @@
 ## ◇ XENOZ CLI in Action
 
 <p align="center">
-  <video src="./assets/X3-cli.mov" width="850" controls>
+  <video src="./assets/X3-cli.mp4" width="850" controls>
     Your browser does not support the video tag.
   </video>
 </p>
