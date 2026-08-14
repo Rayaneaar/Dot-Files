@@ -4,12 +4,15 @@
   <strong>One command. One theme. Entire environment.</strong>
 </p>
 
-## ◇ XENOZ CLI in Action
+## ◇ XENOZ Custom minimal wallpapers 
 
 <p align="center">
   <img src="./xenoz/themes/xecrimsonz/xecrimsonz.png" width="850" >
-    Your browser does not support the video tag.
-  </video>
+  <img src="./xenoz/themes/xedarkz/xedarkz.png" width="850" >
+  <img src="./xenoz/themes/xelightz/xelightz.png" width="850" >
+  <img src="./xenoz/themes/xeoceanz/xeoceanz.png" width="850" >
+  <img src="./xenoz/themes/xeswampz/xeswampzz.png" width="850" >
+  <img src="./xenoz/themes/xeamethystz/xeamethystz.png" width="850" >
 </p>
 
 > 🎥 **XENOZ CLI demo** — switch between complete desktop themes without manually editing every application.
